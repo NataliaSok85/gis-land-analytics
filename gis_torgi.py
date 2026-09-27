@@ -1,7 +1,6 @@
 import requests
 import pandas as pd
 import re
-from bs4 import BeautifulSoup
 
 
 # Карточка открытого набора данных ГИС Торги
