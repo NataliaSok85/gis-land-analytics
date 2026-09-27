@@ -1,16 +1,9 @@
 import streamlit as st
 
-from gis_torgi import (
-    load_torgi_data,
-    search_cadastral_quarter,
-    normalize_results
-)
+from gis_torgi import load_torgi_data
 
 
 st.title("🌳 Анализ земельных участков России")
-
-st.write("Поиск торгов ГИС ТОРГИ")
-
 
 st.subheader("Поиск по кадастровому кварталу")
 
@@ -20,55 +13,58 @@ cadastral = st.text_input(
 )
 
 
-if st.button("🔎 Найти в ГИС ТОРГИ"):
+if st.button("🔎 Проверить ГИС ТОРГИ"):
 
     if not cadastral:
 
-        st.warning("Введите кадастровый квартал")
+        st.warning(
+            "Введите кадастровый квартал"
+        )
 
     else:
 
-        with st.spinner("Загружаю данные ГИС ТОРГИ..."):
+        with st.spinner(
+            "Проверяю подключение к ГИС ТОРГИ..."
+        ):
 
             try:
 
-                data = load_torgi_data()
+                result = load_torgi_data()
 
-                st.success("Данные ГИС ТОРГИ загружены")
-
-                results = search_cadastral_quarter(
-                    cadastral,
-                    data
+                st.success(
+                    "ГИС ТОРГИ доступна"
                 )
 
-                df = normalize_results(results)
+                st.write(
+                    "Кадастровый квартал:",
+                    cadastral
+                )
 
-                if df.empty:
+                if result["meta_url"]:
 
                     st.info(
-                        "По этому кадастровому кварталу "
-                        "пока ничего не найдено."
+                        "Найдено описание набора "
+                        "открытых данных."
+                    )
+
+                    st.code(
+                        result["meta_url"]
                     )
 
                 else:
 
-                    st.success(
-                        f"Найдено записей: {len(df)}"
+                    st.warning(
+                        "Набор найден, "
+                        "но ссылка на meta.json "
+                        "пока не определена."
                     )
 
-                    st.dataframe(
-                        df,
-                        use_container_width=True
-                    )
-
-            except Exception as e:
+            except Exception as error:
 
                 st.error(
-                    "Не удалось получить данные ГИС ТОРГИ."
+                    "Ошибка подключения к ГИС ТОРГИ"
                 )
 
-                st.write(
-                    "Техническая ошибка:"
+                st.code(
+                    str(error)
                 )
-
-                st.code(str(e))
