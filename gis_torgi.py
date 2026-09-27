@@ -1,90 +1,179 @@
 import requests
-import pandas as pd
 import re
+import pandas as pd
 
 
-# Прямые открытые данные ГИС Торги.
-# Используем несколько вариантов адресов,
-# чтобы приложение могло попробовать другой источник,
-# если один из них временно недоступен.
-
-DATA_URLS = [
-    "https://torgi.gov.ru/new/opendata/7710568760-notice/data-20260801T0000-",
-    "https://torgi.gov.ru/new/opendata/7710568760-notice/data-20260701T0000-",
-    "https://torgi.gov.ru/new/opendata/7710568760-notice/data-20260601T0000-",
+# Реестр открытых данных ГИС ТОРГИ
+REGISTRY_URLS = [
+    "https://torgi.gov.ru/new/opendata/list.json",
+    "https://torgi.gov.ru/opendata/list.json",
 ]
 
+# Набор данных извещений ГИС ТОРГИ
+DATASET_ID = "7710568760-notice"
 
-def find_cadastral(value):
+
+def request_json(url, timeout=20):
     """
-    Ищет кадастровый номер в тексте.
+    Получает JSON по указанному адресу.
     """
 
-    if not value:
-        return None
+    response = requests.get(
+        url,
+        timeout=timeout,
+        headers={
+            "User-Agent": "Mozilla/5.0"
+        }
+    )
 
-    pattern = r"\d{2}:\d{2}:\d{7,}"
+    response.raise_for_status()
 
-    match = re.search(pattern, str(value))
+    return response.json()
 
-    if match:
-        return match.group(0)
+
+def get_registry():
+    """
+    Получает реестр открытых данных ГИС ТОРГИ.
+    """
+
+    errors = []
+
+    for url in REGISTRY_URLS:
+
+        try:
+
+            data = request_json(url)
+
+            return data
+
+        except Exception as error:
+
+            errors.append(
+                f"{url}: {error}"
+            )
+
+    raise RuntimeError(
+        "Не удалось получить реестр открытых данных ГИС ТОРГИ.\n"
+        + "\n".join(errors)
+    )
+
+
+def find_dataset(registry):
+    """
+    Находит в реестре набор извещений ГИС ТОРГИ.
+    """
+
+    if isinstance(registry, list):
+
+        items = registry
+
+    elif isinstance(registry, dict):
+
+        items = []
+
+        for key in [
+            "items",
+            "datasets",
+            "data",
+            "result"
+        ]:
+
+            value = registry.get(key)
+
+            if isinstance(value, list):
+                items = value
+                break
+
+    else:
+
+        items = []
+
+    for item in items:
+
+        text = str(item)
+
+        if DATASET_ID in text:
+
+            return item
+
+        if (
+            "notice" in text.lower()
+            and "торг" in text.lower()
+        ):
+
+            return item
 
     return None
 
 
-def search_in_item(item, cadastral_quarter):
+def get_meta_url(dataset):
     """
-    Проверяет всю запись ГИС Торги
-    на наличие нужного кадастрового квартала.
+    Пытается найти meta.json в описании набора.
     """
 
-    text = str(item)
+    if not dataset:
+        return None
 
-    return cadastral_quarter in text
+    text = str(dataset)
+
+    patterns = [
+        r'https?://[^"\']+meta\.json',
+        r'["\']([^"\']*meta\.json)["\']'
+    ]
+
+    for pattern in patterns:
+
+        match = re.search(
+            pattern,
+            text
+        )
+
+        if match:
+
+            url = match.group(1)
+
+            if url.startswith("/"):
+
+                url = (
+                    "https://torgi.gov.ru"
+                    + url
+                )
+
+            return url
+
+    return None
 
 
 def load_torgi_data():
     """
-    Загружает открытые данные ГИС Торги.
+    На этом этапе НЕ скачивает большую базу.
+
+    Проверяет:
+    1. доступность реестра;
+    2. наличие набора извещений;
+    3. наличие meta.json.
+
+    Возвращает диагностическую информацию.
     """
 
-    last_error = None
+    registry = get_registry()
 
-    for url in DATA_URLS:
+    dataset = find_dataset(registry)
 
-        try:
+    if not dataset:
 
-            response = requests.get(
-                url,
-                timeout=60,
-                headers={
-                    "User-Agent": "Mozilla/5.0"
-                }
-            )
+        raise RuntimeError(
+            "Набор 7710568760-notice "
+            "не найден в реестре ГИС ТОРГИ."
+        )
 
-            if response.status_code != 200:
-                continue
+    meta_url = get_meta_url(dataset)
 
-            try:
-                data = response.json()
-                return data
-
-            except Exception:
-
-                # Иногда сервер может вернуть
-                # большой JSON-файл как текст.
-                return response.json()
-
-        except Exception as error:
-
-            last_error = error
-
-    raise RuntimeError(
-        "Не удалось загрузить открытые данные "
-        "ГИС Торги. Последняя ошибка: "
-        + str(last_error)
-    )
+    return {
+        "registry": registry,
+        "dataset": dataset,
+        "meta_url": meta_url
+    }
 
 
 def search_cadastral_quarter(
@@ -92,95 +181,25 @@ def search_cadastral_quarter(
     data
 ):
     """
-    Ищет торги по кадастровому кварталу.
+    Пока возвращает пустой результат.
+
+    Поиск по кадастру подключим после
+    подтверждения рабочего источника данных.
     """
 
-    results = []
-
-    if not data:
-        return results
-
-    # Если данные находятся внутри словаря
-    if isinstance(data, dict):
-
-        # Возможные варианты структуры
-        possible_lists = [
-            data.get("data"),
-            data.get("items"),
-            data.get("notices"),
-            data.get("results")
-        ]
-
-        for value in possible_lists:
-
-            if isinstance(value, list):
-                data = value
-                break
-
-    if not isinstance(data, list):
-        return results
-
-    for item in data:
-
-        if search_in_item(
-            item,
-            cadastral_quarter
-        ):
-
-            results.append(item)
-
-    return results
+    return []
 
 
 def normalize_results(results):
     """
-    Превращает найденные записи
-    в таблицу pandas.
+    Преобразует результаты в таблицу.
     """
 
     if not results:
+
         return pd.DataFrame()
 
-    rows = []
-
-    for item in results:
-
-        if isinstance(item, dict):
-
-            row = {}
-
-            for key, value in item.items():
-
-                if isinstance(
-                    value,
-                    (dict, list)
-                ):
-
-                    value = str(value)
-
-                row[key] = value
-
-            rows.append(row)
-
-        else:
-
-            rows.append({
-                "Данные": str(item)
-            })
-
-    if not rows:
-        return pd.DataFrame()
-
-    return pd.DataFrame(rows)
-
-
-
-
-
-
-
-
-
+    return pd.DataFrame(results)
 
 
 
