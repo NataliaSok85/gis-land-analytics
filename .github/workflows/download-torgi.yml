@@ -1,0 +1,30 @@
+name: Test GIS Torgi
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test-download:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download GIS Torgi JSON
+        run: |
+          python - <<'PY'
+          import urllib.request
+
+          url = "https://torgi.gov.ru/new/opendata/7710568760-notice/data-20260927T0000-20260928T0000-structure-20240401.json"
+
+          request = urllib.request.Request(
+              url,
+              headers={"User-Agent": "Mozilla/5.0"}
+          )
+
+          with urllib.request.urlopen(request, timeout=60) as response:
+              data = response.read()
+
+              print("STATUS:", response.status)
+              print("BYTES:", len(data))
+              print("FIRST 200 CHARACTERS:")
+              print(data[:200].decode("utf-8", errors="replace"))
+          PY
